@@ -1,0 +1,16 @@
+# SportArena - Run Commands
+
+## 1. Database Setup
+# Ensure PostgreSQL is running and you have a database named 'sportarena'
+# You can run the schema using psql:
+# psql -U postgres -d sportarena -f database/schema.sql
+
+## 2. Backend Server
+cd backend
+npm install
+npm run dev
+
+## 3. Frontend
+cd frontend
+# Since it's a single HTML file, you can just open it in a browser or serve it:
+npx serve .

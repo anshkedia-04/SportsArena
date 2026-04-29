@@ -1,0 +1,2025 @@
+
+    const { useState, useEffect, useCallback, createContext, useContext } = React;
+
+    const API = 'http://localhost:5000';
+
+    const SPORTS = [
+      { value: 'football',   label: 'Football',   icon: null },
+      { value: 'cricket',    label: 'Cricket',    icon: null },
+      { value: 'badminton',  label: 'Badminton',  icon: null },
+      { value: 'basketball', label: 'Basketball', icon: null },
+      { value: 'tennis',     label: 'Tennis',     icon: null },
+      { value: 'volleyball', label: 'Volleyball', icon: null },
+      { value: 'swimming',   label: 'Swimming',   icon: null },
+      { value: 'boxing',     label: 'Boxing',     icon: null },
+    ];
+
+    const SPORT_IMAGES = {
+      football:   'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=900&q=80',
+      cricket:    'https://images.unsplash.com/photo-1531415074968-036ba1b575da?w=900&q=80',
+      badminton:  'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=900&q=80',
+      basketball: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=900&q=80',
+      tennis:     'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=900&q=80',
+      volleyball: 'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=900&q=80',
+      swimming:   'https://images.unsplash.com/photo-1576610616656-d3aa5d1f4534?w=900&q=80',
+      boxing:     'https://images.unsplash.com/photo-1549719386-74dfcbf7dbed?w=900&q=80',
+    };
+
+    /* ============================
+       API Helper
+    ============================ */
+    const api = {
+      headers: (auth = true) => {
+        const h = { 'Content-Type': 'application/json' };
+        if (auth) { const t = localStorage.getItem('sa_token'); if (t) h['Authorization'] = `Bearer ${t}`; }
+        return h;
+      },
+      get: async (path, auth = false) => {
+        const r = await fetch(`${API}${path}`, { headers: api.headers(auth) });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'Request failed'); }
+        return r.json();
+      },
+      post: async (path, body, auth = true) => {
+        const r = await fetch(`${API}${path}`, { method: 'POST', headers: api.headers(auth), body: JSON.stringify(body) });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'Request failed'); }
+        return r.json();
+      },
+      put: async (path, body) => {
+        const r = await fetch(`${API}${path}`, { method: 'PUT', headers: api.headers(true), body: JSON.stringify(body) });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'Request failed'); }
+        return r.json();
+      },
+      delete: async (path) => {
+        const r = await fetch(`${API}${path}`, { method: 'DELETE', headers: api.headers(true) });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'Request failed'); }
+        return r.json();
+      },
+    };
+
+    /* ============================
+       Auth
+    ============================ */
+    const AuthContext = createContext(null);
+    function AuthProvider({ children }) {
+      const [user, setUser] = useState(null);
+      const [token, setToken] = useState(localStorage.getItem('sa_token'));
+      const [loading, setLoading] = useState(true);
+      const [socket, setSocket] = useState(null);
+
+      useEffect(() => {
+        if (token) {
+          try {
+            const p = JSON.parse(atob(token.split('.')[1]));
+            setUser({ id: p.id, name: p.name, email: p.email, role: p.role });
+            const s = io(API);
+            setSocket(s);
+            s.on('connect', () => s.emit('join_user', p.id));
+            return () => s.disconnect();
+          } catch { localStorage.removeItem('sa_token'); setToken(null); }
+        } else {
+          setSocket(null);
+        }
+        setLoading(false);
+      }, [token]);
+
+      const login = (u, t) => { localStorage.setItem('sa_token', t); setToken(t); setUser(u); };
+      const logout = () => { localStorage.removeItem('sa_token'); setToken(null); setUser(null); };
+      return <AuthContext.Provider value={{ user, token, loading, socket, login, logout }}>{children}</AuthContext.Provider>;
+    }
+    const useAuth = () => useContext(AuthContext);
+
+    /* ============================
+       Toast
+    ============================ */
+    function Toast({ message, type, onClose }) {
+      useEffect(() => { const t = setTimeout(onClose, 4200); return () => clearTimeout(t); }, []);
+      const colors = { success: '#1DB954', error: '#E8371A', info: '#3b82f6' };
+      const labels = { success: 'SUCCESS', error: 'ERROR', info: 'INFO' };
+      return (
+        <div style={{
+          position: 'fixed', top: 76, right: 20, zIndex: 9999,
+          background: 'var(--surface)',
+          border: `1px solid ${colors[type] || colors.info}`,
+          borderLeft: `4px solid ${colors[type] || colors.info}`,
+          borderRadius: 'var(--r-md)',
+          padding: '14px 18px',
+          maxWidth: 360,
+          display: 'flex', alignItems: 'flex-start', gap: 12,
+          animation: 'slideRight 0.35s ease-out',
+          boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: colors[type], marginBottom: 3 }}>
+              {labels[type] || 'INFO'}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5 }}>{message}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, lineHeight: 1, padding: 0, marginTop: -2, flexShrink: 0 }}>×</button>
+        </div>
+      );
+    }
+
+    /* ============================
+       Navbar
+    ============================ */
+    function Navbar({ currentPage, setPage }) {
+      const { user, logout } = useAuth();
+      const [mobileOpen, setMobileOpen] = useState(false);
+
+      return (
+        <>
+          <nav className="navbar">
+            <div className="navbar-inner">
+              <button className="logo" onClick={() => setPage(user?.role === 'business' ? 'dashboard' : 'home')}>
+                <div className="logo-mark">
+                  <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                </div>
+                <span className="logo-text">Sport<span>Arena</span></span>
+              </button>
+
+              {user && (
+                <>
+                  <div className="nav-divider desktop-only"></div>
+                  <div className="nav-links desktop-only">
+                    {user.role === 'customer' && <>
+                      <button className={`nav-link ${currentPage === 'home' ? 'active' : ''}`} onClick={() => setPage('home')}>Explore</button>
+                      <button className={`nav-link ${currentPage === 'my-bookings' ? 'active' : ''}`} onClick={() => setPage('my-bookings')}>My Bookings</button>
+                    </>}
+                    {user.role === 'business' && <>
+                      <button className={`nav-link ${currentPage === 'dashboard' ? 'active' : ''}`} onClick={() => setPage('dashboard')}>Dashboard</button>
+                      <button className={`nav-link ${currentPage === 'my-arenas' ? 'active' : ''}`} onClick={() => setPage('my-arenas')}>My Arenas</button>
+                    </>}
+                  </div>
+                </>
+              )}
+
+              <div className="nav-right">
+                {user ? (
+                  <div className="nav-user desktop-only">
+                    <div className="nav-avatar">{user.name?.[0]?.toUpperCase()}</div>
+                    <span className="nav-name">{user.name}</span>
+                    <button className="btn-ghost" onClick={logout} style={{ marginLeft: 4, color: 'var(--accent)', padding: '4px 10px' }}>Logout</button>
+                  </div>
+                ) : (
+                  <div className="desktop-only" style={{ gap: 8, display: 'flex', alignItems: 'center' }}>
+                    <button className="btn-ghost" onClick={() => setPage('login')}>Log in</button>
+                    <button className="btn-primary btn-sm" onClick={() => setPage('register')}>Get Started</button>
+                  </div>
+                )}
+                <button className="mobile-menu-btn mobile-only" onClick={() => setMobileOpen(o => !o)}>
+                  <div className="hamburger-line"></div>
+                  <div className="hamburger-line" style={{ width: 12 }}></div>
+                  <div className="hamburger-line"></div>
+                </button>
+              </div>
+            </div>
+          </nav>
+
+          {mobileOpen && (
+            <div className="mobile-menu anim-slideDown">
+              {user ? <>
+                {user.role === 'customer' && <>
+                  <button className="mobile-nav-link" onClick={() => { setPage('home'); setMobileOpen(false); }}>Explore Arenas</button>
+                  <button className="mobile-nav-link" onClick={() => { setPage('my-bookings'); setMobileOpen(false); }}>My Bookings</button>
+                </>}
+                {user.role === 'business' && <>
+                  <button className="mobile-nav-link" onClick={() => { setPage('dashboard'); setMobileOpen(false); }}>Dashboard</button>
+                  <button className="mobile-nav-link" onClick={() => { setPage('my-arenas'); setMobileOpen(false); }}>My Arenas</button>
+                </>}
+                <button className="mobile-nav-link" onClick={logout} style={{ color: 'var(--accent)' }}>Logout</button>
+              </> : <>
+                <button className="mobile-nav-link" onClick={() => { setPage('login'); setMobileOpen(false); }}>Log In</button>
+                <button className="mobile-nav-link" onClick={() => { setPage('register'); setMobileOpen(false); }} style={{ color: 'var(--accent)', fontWeight: 700 }}>Get Started</button>
+              </>}
+            </div>
+          )}
+        </>
+      );
+    }
+
+    /* ============================
+       Ticker
+    ============================ */
+    function Ticker() {
+      const items = ['Football', 'Cricket', 'Badminton', 'Basketball', 'Tennis', 'Volleyball', 'Swimming', 'Boxing'];
+      const repeated = [...items, ...items];
+      return (
+        <div className="ticker">
+          <div className="ticker-label">Live Now</div>
+          <div style={{ overflow: 'hidden', flex: 1 }}>
+            <div className="ticker-track">
+              {repeated.map((item, i) => (
+                <span key={i} className="ticker-item">{item}<span className="ticker-dot">&#9679;</span></span>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================
+       Hero Section
+    ============================ */
+    function HeroSection({ setPage }) {
+      return (
+        <div className="hero">
+          <div className="hero-bg">
+            <img className="hero-bg-img" src="https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?w=1600&q=80" alt="" />
+            <div className="hero-bg-overlay"></div>
+            <div className="hero-noise"></div>
+          </div>
+          <div className="hero-line"></div>
+          <div className="hero-grid"></div>
+          <div className="hero-content">
+            <div className="hero-tag anim-fadeUp">
+              <div className="hero-tag-dot"></div>
+              Now Live In Your City
+            </div>
+            <h1 className="hero-headline anim-fadeUp d1">
+              Book Your Game,<br />
+              <em>Own The Arena</em>
+            </h1>
+            <p className="hero-sub anim-fadeUp d2">
+              Discover and reserve premium sports arenas near you. Football, Cricket, Badminton — all at your fingertips, instantly confirmed.
+            </p>
+            <div className="hero-actions anim-fadeUp d3">
+              <button className="btn-primary" onClick={() => setPage('register')} style={{ fontSize: 15, padding: '12px 30px' }}>
+                Start Booking
+              </button>
+              <button className="btn-outline" onClick={() => setPage('register')} style={{ fontSize: 15, padding: '12px 30px' }}>
+                List Your Arena
+              </button>
+            </div>
+            <div className="hero-stats anim-fadeUp d4">
+              <div>
+                <div className="hero-stat-val">200<span>+</span></div>
+                <div className="hero-stat-label">Arenas Listed</div>
+              </div>
+              <div className="hero-stat-divider"></div>
+              <div>
+                <div className="hero-stat-val">12<span>k</span></div>
+                <div className="hero-stat-label">Games Booked</div>
+              </div>
+              <div className="hero-stat-divider"></div>
+              <div>
+                <div className="hero-stat-val">8<span>+</span></div>
+                <div className="hero-stat-label">Sports Available</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================
+       Login Page
+    ============================ */
+    function LoginPage({ setPage, showToast }) {
+      const { login } = useAuth();
+      const [form, setForm] = useState({ email: '', password: '' });
+      const [loading, setLoading] = useState(false);
+      const handleSubmit = async (e) => {
+        e.preventDefault(); setLoading(true);
+        try {
+          const data = await api.post('/auth/login', form, false);
+          login(data.user, data.token);
+          showToast(`Welcome back, ${data.user.name}`, 'success');
+          setPage(data.user.role === 'business' ? 'dashboard' : 'home');
+        } catch (err) { showToast(err.message, 'error'); }
+        setLoading(false);
+      };
+      return (
+        <div className="auth-page">
+          <div className="auth-bg-lines"></div>
+          <div className="auth-card anim-scaleIn">
+            <div className="auth-card-stripe"></div>
+            <div className="auth-card-body">
+              <div className="auth-eyebrow">SportArena</div>
+              <div className="auth-title">Welcome<br />Back</div>
+              <div className="auth-sub">Sign in to your account to continue</div>
+              <form onSubmit={handleSubmit}>
+                <div className="form-group">
+                  <label className="form-label">Email Address</label>
+                  <input className="form-input" type="email" placeholder="you@example.com" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Password</label>
+                  <input className="form-input" type="password" placeholder="Enter your password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+                </div>
+                <button type="submit" disabled={loading} className="submit-btn">
+                  {loading ? <><Spin/> Signing In</> : 'Sign In'}
+                </button>
+              </form>
+              <div className="auth-switch">
+                No account?{' '}
+                <button className="auth-switch-link" onClick={() => setPage('register')}>Create one free</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================
+       Register Page
+    ============================ */
+    function RegisterPage({ setPage, showToast }) {
+      const { login } = useAuth();
+      const [form, setForm] = useState({ name: '', email: '', password: '', role: 'customer' });
+      const [loading, setLoading] = useState(false);
+      const handleSubmit = async (e) => {
+        e.preventDefault(); setLoading(true);
+        try {
+          const data = await api.post('/auth/register', form, false);
+          login(data.user, data.token);
+          showToast(`Account created. Welcome, ${data.user.name}!`, 'success');
+          setPage(data.user.role === 'business' ? 'dashboard' : 'home');
+        } catch (err) { showToast(err.message, 'error'); }
+        setLoading(false);
+      };
+      return (
+        <div className="auth-page">
+          <div className="auth-bg-lines"></div>
+          <div className="auth-card anim-scaleIn" style={{ maxWidth: 480 }}>
+            <div className="auth-card-stripe"></div>
+            <div className="auth-card-body">
+              <div className="auth-eyebrow">Create Account</div>
+              <div className="auth-title">Get<br />Started</div>
+              <div className="auth-sub">Join thousands booking and listing arenas</div>
+              <form onSubmit={handleSubmit}>
+                <div className="form-group">
+                  <label className="form-label">I want to</label>
+                  <div className="role-selector">
+                    {[{ val: 'customer', title: 'Book Arenas', desc: 'Find & play at arenas' }, { val: 'business', title: 'List Arenas', desc: 'Manage & earn revenue' }].map(r => (
+                      <div key={r.val} className={`role-option ${form.role === r.val ? 'active' : ''}`} onClick={() => setForm({...form, role: r.val})}>
+                        <div className="role-option-title">{r.title}</div>
+                        <div className="role-option-desc">{r.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Full Name</label>
+                  <input className="form-input" type="text" placeholder="John Doe" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Email Address</label>
+                  <input className="form-input" type="email" placeholder="you@example.com" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Password</label>
+                  <input className="form-input" type="password" placeholder="Min. 6 characters" required minLength="6" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+                </div>
+                <button type="submit" disabled={loading} className="submit-btn">
+                  {loading ? <><Spin/> Creating Account</> : 'Create Account'}
+                </button>
+              </form>
+              <div className="auth-switch">
+                Already have an account?{' '}
+                <button className="auth-switch-link" onClick={() => setPage('login')}>Sign in</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================
+       Home / Explore
+    ============================ */
+    function HomePage({ setPage, setSelectedArena, showToast }) {
+      const { user } = useAuth();
+      const [arenas, setArenas] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [filters, setFilters] = useState({ sport_type: '', min_price: '', max_price: '', location: '', date: '', start_time: '', end_time: '' });
+      const [userLoc, setUserLoc] = useState(null);
+      const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'map'
+
+      useEffect(() => {
+        if ("geolocation" in navigator) {
+          navigator.geolocation.getCurrentPosition((pos) => {
+            setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          });
+        }
+      }, []);
+
+      const loadArenas = useCallback(async () => {
+        setLoading(true);
+        try {
+          const params = new URLSearchParams();
+          if (filters.sport_type) params.set('sport_type', filters.sport_type);
+          if (filters.min_price) params.set('min_price', filters.min_price);
+          if (filters.max_price) params.set('max_price', filters.max_price);
+          if (filters.location) params.set('location', filters.location);
+          if (filters.date) params.set('date', filters.date);
+          if (filters.start_time) params.set('start_time', filters.start_time);
+          if (filters.end_time) params.set('end_time', filters.end_time);
+          if (userLoc) {
+            params.set('lat', userLoc.lat);
+            params.set('lng', userLoc.lng);
+          }
+          const qs = params.toString();
+          const data = await api.get(`/arenas${qs ? '?' + qs : ''}`);
+          setArenas(data);
+        } catch (err) { showToast(err.message, 'error'); }
+        setLoading(false);
+      }, [filters]);
+
+      useEffect(() => { loadArenas(); }, [loadArenas]);
+
+      return (
+        <div>
+          {!user && <><Ticker /><HeroSection setPage={setPage} /></>}
+
+          <div className="page-wrap section-pad">
+            {user && (
+              <div className="page-band" style={{ padding: 0, marginBottom: 32, borderBottom: '1px solid var(--border)', paddingBottom: 28 }}>
+                <div className="filter-label" style={{ color: 'var(--accent)', marginBottom: 8 }}>Discover</div>
+                <div className="section-title">Find Your <span>Arena</span></div>
+                <div className="section-subtitle">Browse premium venues across all sports</div>
+              </div>
+            )}
+
+            {/* Filter Bar */}
+            <div className="filter-bar">
+              <div className="filter-bar-top">
+                <div>
+                  <div className="filter-label">Location</div>
+                  <input className="filter-input" type="text" placeholder="City, area..." value={filters.location} onChange={e => setFilters({...filters, location: e.target.value})} />
+                </div>
+                <div>
+                  <div className="filter-label">Sport</div>
+                  <select className="filter-input filter-select" value={filters.sport_type} onChange={e => setFilters({...filters, sport_type: e.target.value})}>
+                    <option value="">All Sports</option>
+                    {SPORTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div className="filter-label">Min Price</div>
+                  <input className="filter-input" type="number" placeholder="Rs. 0" value={filters.min_price} onChange={e => setFilters({...filters, min_price: e.target.value})} />
+                </div>
+                <div>
+                  <div className="filter-label">Max Price</div>
+                  <input className="filter-input" type="number" placeholder="Any" value={filters.max_price} onChange={e => setFilters({...filters, max_price: e.target.value})} />
+                </div>
+              </div>
+              <div className="filter-divider"></div>
+              <div className="sport-chips">
+                <button className={`sport-chip ${!filters.sport_type ? 'active' : ''}`} onClick={() => setFilters({...filters, sport_type: ''})}>All</button>
+                {SPORTS.map(s => (
+                  <button key={s.value} className={`sport-chip ${filters.sport_type === s.value ? 'active' : ''}`} onClick={() => setFilters({...filters, sport_type: s.value})}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Community Games Section */}
+            {user?.role === 'customer' && (
+              <div style={{ marginBottom: 48 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 20 }}>
+                   <div>
+                      <div className="filter-label" style={{ color: 'var(--accent)' }}>Join Others</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'var(--font-display)' }}>Community <span>Games</span></div>
+                   </div>
+                </div>
+                <CommunityGames showToast={showToast} />
+              </div>
+            )}
+
+            {/* Grid */}
+            <div style={{ marginBottom: 20 }}>
+               <div className="filter-label" style={{ color: 'var(--accent)' }}>Arenas</div>
+               <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 20 }}>Featured <span>Venues</span></div>
+            </div>
+            {loading ? <SpinnerFull /> : arenas.length === 0 ? (
+              <EmptyState title="No Arenas Found" desc="Try adjusting your filters or check back soon for new venues." />
+            ) : (
+              <div className="arena-grid">
+                {arenas.map((arena, i) => (
+                  <ArenaCard key={arena.id} arena={arena} idx={i} onClick={() => { setSelectedArena(arena); setPage('arena-detail'); }} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================
+       Arena Card
+    ============================ */
+    function ArenaCard({ arena, idx, onClick }) {
+      const sportTypes = arena.sport_type?.split(',').map(s => s.trim().toLowerCase()) || ['football'];
+      const firstSport = sportTypes[0];
+      const sportLabel = sportTypes.map(st => SPORTS.find(s => s.value === st)?.label || st).join(', ');
+      const imgUrl = arena.image_url || SPORT_IMAGES[firstSport] || SPORT_IMAGES.football;
+      return (
+        <div className="arena-card anim-fadeUp" style={{ animationDelay: `${idx * 0.06}s` }} onClick={onClick}>
+          <div className="arena-card-img-wrap">
+            <img className="arena-card-img" src={imgUrl} alt={arena.name} onError={e => { e.target.src = SPORT_IMAGES.football; }} />
+            <div className="arena-card-img-overlay"></div>
+            <div className="arena-card-sport">{sportLabel?.toUpperCase()}</div>
+            <div className="arena-card-price">₹{arena.price_day}/hr</div>
+          </div>
+          <div className="arena-card-body">
+            <div className="arena-card-name">{arena.name}</div>
+            <div className="arena-card-loc"><div className="loc-dot"></div>{arena.location}</div>
+            {arena.description && <div className="arena-card-desc">{arena.description}</div>}
+            <div className="arena-card-footer">
+              {arena.contact && (
+                <a href={`tel:${arena.contact}`} onClick={e => e.stopPropagation()} className="card-btn-contact">Call</a>
+              )}
+              <button className="card-btn-book">Book Now</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================
+       Arena Detail — 7-day slots, duration selector, tiered pricing
+    ============================ */
+    // Arena Detail Page Component
+    function ArenaDetailPage({ arena, setPage, showToast }) {
+      const { user } = useAuth();
+      const [slots, setSlots] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [selectedSlots, setSelectedSlots] = useState([]);
+      const [showPayment, setShowPayment] = useState(false);
+      const [bookingResult, setBookingResult] = useState(null);
+      const [activeDay, setActiveDay] = useState(0);
+      const [reviews, setReviews] = useState([]);
+      const [passes, setPasses] = useState([]);
+      const [userPasses, setUserPasses] = useState([]);
+
+      useEffect(() => {
+        if (!arena) return;
+        setLoading(true);
+        Promise.all([
+          api.get(`/slots/${arena.id}`),
+          api.get(`/arenas/${arena.id}/reviews`),
+          api.get(`/arenas/${arena.id}/passes`),
+          user ? api.get('/my-passes', true) : Promise.resolve([])
+        ]).then(([slotData, reviewData, passData, myPassData]) => {
+          setSlots(slotData);
+          setReviews(reviewData);
+          setPasses(passData);
+          setUserPasses(myPassData.filter(p => p.arena_id === arena.id));
+        }).catch(err => showToast(err.message, 'error')).finally(() => setLoading(false));
+      }, [arena.id, user]);
+
+      if (!arena) { setPage('home'); return null; }
+
+      const imgUrl = arena.image_url || SPORT_IMAGES[arena.sport_type?.toLowerCase()] || SPORT_IMAGES.football;
+      const sportLabel = SPORTS.find(s => s.value === arena.sport_type?.toLowerCase())?.label || arena.sport_type;
+
+      // Generate 7 day tabs
+      const days = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() + i);
+        days.push({
+          date: d,
+          dateStr: d.toISOString().split('T')[0],
+          label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short' }),
+          dayNum: d.getDate(),
+          month: d.toLocaleDateString('en-US', { month: 'short' }),
+        });
+      }
+
+      // Helper to format hour
+      const fmtHour = (t) => {
+        if (!t) return '';
+        const h = parseInt(t.substring(0, 2));
+        if (h === 0) return '12 AM';
+        if (h < 12) return `${h} AM`;
+        if (h === 12) return '12 PM';
+        return `${h - 12} PM`;
+      };
+
+      const openH = arena.open_hour ?? 6;
+      const peakH = arena.peak_start_hour ?? 17;
+      const closeH = arena.close_hour ?? 23;
+      const closeDisplay = closeH > 24 ? `${closeH - 24} AM` : closeH === 24 ? '12 AM' : fmtHour(`${String(closeH).padStart(2,'0')}:00`);
+      const openDisplay = fmtHour(`${String(openH).padStart(2,'0')}:00`);
+      const peakDisplay = fmtHour(`${String(peakH).padStart(2,'0')}:00`);
+
+      const activeDateStr = days[activeDay]?.dateStr;
+      const daySlots = slots.filter(s => {
+        const slotDate = new Date(s.date).toISOString().split('T')[0];
+        return slotDate === activeDateStr;
+      }).sort((a, b) => {
+        const ha = parseInt(a.start_time.substring(0, 2));
+        const hb = parseInt(b.start_time.substring(0, 2));
+        const ea = ha < openH ? ha + 24 : ha;
+        const eb = hb < openH ? hb + 24 : hb;
+        return ea - eb;
+      });
+
+      const toggleSlot = (slot) => {
+        if (!slot.is_available) return;
+        setSelectedSlots(prev => {
+          const exists = prev.find(s => s.id === slot.id);
+          if (exists) return prev.filter(s => s.id !== slot.id);
+          
+          // Check if same day
+          if (prev.length > 0 && prev[0].date !== slot.date) {
+            showToast("Please select slots from the same day", "info");
+            return [slot];
+          }
+          
+          return [...prev, slot].sort((a, b) => a.start_time.localeCompare(b.start_time));
+        });
+      };
+
+      const handleWaitlist = async (slot) => {
+        if (!user) { setPage('login'); return; }
+        try {
+          await api.post('/waitlist', { arena_id: arena.id, date: slot.date, start_time: slot.start_time });
+          showToast('Added to waitlist! We will notify you if it becomes available.', 'success');
+        } catch (err) { showToast(err.message, 'error'); }
+      };
+
+      const totalPrice = selectedSlots.reduce((sum, s) => sum + parseFloat(s.price), 0);
+
+      const handleBook = () => {
+        if (selectedSlots.length === 0) { showToast('Select at least one time slot', 'error'); return; }
+        setShowPayment(true);
+      };
+
+      const handlePayment = async (method, upiId, guestName, guestPhone, isPublic, maxPlayers, couponCode, passId) => {
+        try {
+          const payload = { 
+            arena_id: arena.id, 
+            slot_ids: selectedSlots.map(s => s.id),
+            amount: totalPrice,
+            payment_method: method,
+            upi_id: upiId,
+            user_name: guestName,
+            user_email: user?.email || '',
+            user_phone: guestPhone,
+            is_public: isPublic,
+            max_players: maxPlayers,
+            coupon_code: couponCode,
+            pass_id: passId
+          };
+          const result = await api.post('/bookings', payload);
+          setBookingResult({ payment: { success: true, message: 'Booking Successful!', transaction_id: result.transaction_id } });
+          setShowPayment(false);
+          const updated = await api.get(`/slots/${arena.id}`);
+          setSlots(updated);
+          setSelectedSlots([]);
+        } catch (err) { 
+          showToast(err.message, 'error');
+          setBookingResult({ payment: { success: false, message: err.message } });
+        }
+      };
+
+      return (
+        <div className="anim-fadeIn">
+          <div className="page-wrap" style={{ paddingTop: 28 }}>
+            <button className="back-btn" onClick={() => setPage('home')} style={{ marginBottom: 24 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+              Back to Arenas
+            </button>
+
+            <div className="detail-grid">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div className="detail-hero">
+                  <img src={imgUrl} alt={arena.name} onError={e => { e.target.src = SPORT_IMAGES.football; }} />
+                  <div className="detail-hero-overlay"></div>
+                  <div className="detail-hero-info">
+                    <div className="detail-sport-badge">{sportLabel?.toUpperCase()}</div>
+                    <div className="detail-arena-name">{arena.name}</div>
+                    <div className="detail-arena-loc">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                      {arena.location}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="detail-section">
+                  <div className="detail-section-header">
+                    <div className="detail-section-title">Pricing & Hours</div>
+                  </div>
+                  <div className="detail-section-body">
+                    <div className="info-grid">
+                      <div className="info-tile" style={{ borderLeft: '3px solid var(--green)' }}>
+                        <div className="info-tile-label">☀️ Day Rate ({openDisplay}–{peakDisplay})</div>
+                        <div className="info-tile-val accent">₹{arena.price_day}/hr</div>
+                      </div>
+                      <div className="info-tile" style={{ borderLeft: '3px solid var(--gold)' }}>
+                        <div className="info-tile-label">🌙 Night Rate ({peakDisplay}–{closeDisplay})</div>
+                        <div className="info-tile-val" style={{ color: 'var(--gold)' }}>₹{arena.price_night}/hr</div>
+                      </div>
+                    </div>
+                    {arena.description && (
+                      <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7, marginTop: 16 }}>{arena.description}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="detail-section">
+                  <div className="detail-section-header">
+                    <div className="detail-section-title">Available Slots</div>
+                  </div>
+                  <div className="detail-section-body">
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 20, overflowX: 'auto', paddingBottom: 4 }}>
+                      {days.map((day, i) => (
+                        <button key={i} onClick={() => { setActiveDay(i); setSelectedSlots([]); }}
+                          style={{
+                            minWidth: 64, padding: '10px 8px', border: activeDay === i ? '2px solid var(--accent)' : '1px solid var(--border)',
+                            borderRadius: 'var(--r-md)', background: activeDay === i ? 'rgba(232, 55, 26, 0.1)' : 'var(--surface2)',
+                            cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, transition: 'all var(--transition)'
+                          }}>
+                          <div style={{ fontSize: 10, fontWeight: 600, color: activeDay === i ? 'var(--accent)' : 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{day.label}</div>
+                          <div style={{ fontSize: 20, fontWeight: 800, color: activeDay === i ? 'var(--text)' : 'var(--text2)', fontFamily: 'var(--font-display)' }}>{day.dayNum}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text3)' }}>{day.month}</div>
+                        </button>
+                      ))}
+                    </div>
+
+                    {loading ? <SpinnerFull /> : daySlots.length === 0 ? (
+                      <EmptyState title="No Slots Found" desc="Arena is closed for this date." />
+                    ) : (
+                      <div className="slots-grid">
+                        {daySlots.map(slot => {
+                          const isSel = selectedSlots.some(s => s.id === slot.id);
+                          const isAvail = slot.is_available && slot.status === 'available';
+                          return (
+                            <button key={slot.id} 
+                              className={`slot-btn ${isSel ? 'selected' : ''}`}
+                              disabled={!isAvail && slot.status !== 'booked'}
+                              style={!isAvail ? { opacity: 0.5, cursor: slot.status === 'booked' ? 'pointer' : 'not-allowed' } : {}}
+                              onClick={() => isAvail ? toggleSlot(slot) : slot.status === 'booked' ? handleWaitlist(slot) : null}>
+                              <div className="slot-time">{fmtHour(slot.start_time)}</div>
+                              {!isAvail && slot.status === 'booked' && (
+                                <div style={{ fontSize: 8, color: 'var(--accent)', fontWeight: 700, marginTop: 4 }}>WAITLIST</div>
+                              )}
+                              {!isAvail && slot.status !== 'booked' && (
+                                <div style={{ fontSize: 8, color: 'var(--text3)', fontWeight: 700, marginTop: 4 }}>{slot.status?.toUpperCase()}</div>
+                              )}
+                              {isAvail && (
+                                <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 4 }}>₹{slot.price}</div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Reviews Section */}
+                <div className="detail-section">
+                  <div className="detail-section-header">
+                    <div className="detail-section-title">Community Reviews</div>
+                  </div>
+                  <div className="detail-section-body">
+                    {reviews.length === 0 ? (
+                      <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>No reviews yet. Be the first to book and rate!</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {reviews.map(rev => (
+                          <div key={rev.id} style={{ paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                              <span style={{ fontWeight: 600, fontSize: 14 }}>{rev.user_name}</span>
+                              <span style={{ color: 'var(--gold)', fontSize: 12 }}>{'★'.repeat(rev.rating)}{'☆'.repeat(5-rev.rating)}</span>
+                            </div>
+                            <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5 }}>{rev.comment}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right: Booking Summary */}
+              <div>
+                <div className="booking-card">
+                  <div className="booking-card-header">
+                    <div className="booking-card-header-title">Booking Summary</div>
+                    <div className="booking-price-big">₹{totalPrice}</div>
+                    <div className="booking-price-sub">{selectedSlots.length} Hour(s) Selected</div>
+                  </div>
+                  <div className="booking-card-body">
+                    {selectedSlots.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+                        {selectedSlots.map(s => (
+                          <div key={s.id} className="booking-row">
+                            <span className="booking-row-label">{fmtHour(s.start_time)} – {fmtHour(s.end_time)}</span>
+                            <span className="booking-row-val">₹{s.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text3)' }}>
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" style={{ marginBottom: 12 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <div style={{ fontSize: 13 }}>Please select one or more slots</div>
+                      </div>
+                    )}
+                    
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 16 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                        <span style={{ fontWeight: 700, fontSize: 15 }}>Total Amount</span>
+                        <span style={{ fontWeight: 900, fontSize: 22, color: 'var(--accent)' }}>₹{totalPrice}</span>
+                      </div>
+                      <button className="book-cta" disabled={selectedSlots.length === 0} onClick={handleBook}>
+                        Proceed to Checkout
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Membership Passes Section */}
+                {passes.length > 0 && (
+                  <div className="detail-section">
+                    <div className="detail-section-header">
+                      <div className="detail-section-title">Membership Passes</div>
+                    </div>
+                    <div className="detail-section-body">
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
+                        {passes.map(p => (
+                          <div key={p.id} style={{ padding: 16, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--surface2)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                             <div style={{ fontWeight: 800, fontSize: 16 }}>{p.name}</div>
+                             <div style={{ fontSize: 12, color: 'var(--text3)' }}>{p.credits} Hours &middot; {p.validity_days} Days</div>
+                             <div style={{ fontWeight: 900, fontSize: 20, color: 'var(--accent)' }}>₹{p.price}</div>
+                             <button className="btn-primary btn-sm" onClick={async () => {
+                               if (!user) return setPage('login');
+                               try {
+                                 await api.post('/buy-pass', { pass_plan_id: p.id });
+                                 showToast('Pass purchased successfully!', 'success');
+                                 window.location.reload();
+                               } catch (err) { showToast(err.message, 'error'); }
+                             }}>Buy Now</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {showPayment && (
+            <div className="modal-overlay" onClick={() => setShowPayment(false)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <div className="modal-title">Checkout</div>
+                  <button className="modal-close" onClick={() => setShowPayment(false)}>×</button>
+                </div>
+                <div className="modal-body">
+                  <PaymentForm 
+                    user={user} 
+                    arena={arena} 
+                    totalPrice={totalPrice} 
+                    count={selectedSlots.length} 
+                    userPasses={userPasses}
+                    onPay={handlePayment} 
+                    onClose={() => setShowPayment(false)} 
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {bookingResult && (
+            <div className="modal-overlay" onClick={() => setBookingResult(null)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <div className="modal-title">{bookingResult.payment.success ? 'Success' : 'Failed'}</div>
+                  <button className="modal-close" onClick={() => setBookingResult(null)}>×</button>
+                </div>
+                <div className="modal-body" style={{ textAlign: 'center', padding: '40px 24px' }}>
+                  <div className={`result-icon-wrap ${bookingResult.payment.success ? 'result-icon-success' : 'result-icon-fail'}`}>
+                    {bookingResult.payment.success ? '✓' : '×'}
+                  </div>
+                  <h3 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>{bookingResult.payment.message}</h3>
+                  <button className="btn-primary" onClick={() => { setBookingResult(null); if (bookingResult.payment.success) setPage('my-bookings'); }}>
+                    {bookingResult.payment.success ? 'View My Bookings' : 'Try Again'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ============================
+       Payment Form
+    ============================ */
+    function PaymentForm({ user, arena, totalPrice, count, userPasses, onPay, onClose }) {
+      const [method, setMethod] = useState('upi');
+      const [upiId, setUpiId] = useState('');
+      const [selectedPass, setSelectedPass] = useState(userPasses?.[0]?.id || '');
+      const [guestName, setGuestName] = useState(user?.name || '');
+      const [guestPhone, setGuestPhone] = useState('');
+      const [guestEmail, setGuestEmail] = useState('');
+      const [guestPassword, setGuestPassword] = useState('');
+      const [isPublic, setIsPublic] = useState(false);
+      const [maxPlayers, setMaxPlayers] = useState(10);
+      const [loading, setLoading] = useState(false);
+      const [couponCode, setCouponCode] = useState('');
+      const [discount, setDiscount] = useState(0);
+      const [validatingCoupon, setValidatingCoupon] = useState(false);
+
+      const applyCoupon = async () => {
+        if (!couponCode.trim()) return;
+        setValidatingCoupon(true);
+        try {
+          const res = await fetch(`${API}/coupons/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ arena_id: arena.id, coupon_code: couponCode })
+          });
+          const data = await res.json();
+          if (data.valid) {
+            setDiscount(parseFloat(data.discount_value));
+            alert(`Coupon applied! Discount of ₹${data.discount_value} added.`);
+          } else {
+            alert(data.error || 'Invalid coupon code');
+            setDiscount(0);
+          }
+        } catch (err) { alert('Error validating coupon'); }
+        setValidatingCoupon(false);
+      };
+
+      const finalPrice = Math.max(0, totalPrice - discount);
+
+      const handlePay = async () => {
+        if (!guestName.trim() || !guestPhone.trim()) {
+          alert('Please enter your name and phone number.');
+          return;
+        }
+        if (!user && (!guestEmail.trim() || !guestPassword.trim())) {
+          alert('Email and password are required for registration.');
+          return;
+        }
+        if (method === 'upi' && (!upiId.trim() || !upiId.includes('@'))) {
+          alert('Please enter a valid UPI ID (e.g. yourname@upi)');
+          return;
+        }
+        
+        setLoading(true);
+        try {
+          if (!user) {
+            const res = await fetch(`${API}/auth/register`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: guestName,
+                email: guestEmail,
+                password: guestPassword,
+                role: 'customer'
+              })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              alert(data.error || 'Registration failed.');
+              setLoading(false);
+              return;
+            }
+            localStorage.setItem('sa_token', data.token);
+          }
+          await onPay(method, upiId, guestName, guestPhone, isPublic, maxPlayers, couponCode, selectedPass);
+        } catch (err) {
+          alert(err.message);
+        }
+        setLoading(false);
+      };
+
+      const upiApps = [
+        { name: 'Google Pay', color: '#4285F4', icon: 'G' },
+        { name: 'PhonePe', color: '#5f259f', icon: 'P' },
+        { name: 'Paytm', color: '#00BAF2', icon: '₽' },
+        { name: 'BHIM', color: '#00897B', icon: 'B' },
+      ];
+
+      return (
+        <div>
+          <div className="payment-amount-box">
+            <div className="payment-amount-label">Amount Due</div>
+            <div className="payment-amount-val">₹{finalPrice}</div>
+            <div className="payment-amount-sub">
+              {arena.name} — {count} Slot(s) 
+              {discount > 0 && <span style={{ color: 'var(--green)', fontWeight: 700 }}> (₹{totalPrice} - ₹{discount} discount)</span>}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+            <button className={`action-btn ${method === 'upi' ? 'active' : ''}`} onClick={() => setMethod('upi')} style={{ flex: 1, background: method === 'upi' ? 'var(--accent)' : 'var(--surface2)', color: method === 'upi' ? 'white' : 'var(--text)' }}>UPI Payment</button>
+            <button className={`action-btn ${method === 'credits' ? 'active' : ''}`} onClick={() => setMethod('credits')} disabled={!userPasses || userPasses.length === 0} style={{ flex: 1, background: method === 'credits' ? 'var(--accent)' : 'var(--surface2)', color: method === 'credits' ? 'white' : 'var(--text)' }}>Use Pass Credits</button>
+          </div>
+
+          {method === 'upi' ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'rgba(46, 124, 209, 0.08)', border: '1px solid rgba(46, 124, 209, 0.2)', borderRadius: 'var(--r-sm)', marginBottom: 20 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E7CD1" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <div style={{ fontSize: 12, color: '#2E7CD1', lineHeight: 1.4 }}>
+                  <strong>Razorpay integration coming soon.</strong> Payments are confirmed instantly for now.
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <div className="filter-label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>Pay via UPI</span>
+                  <span style={{ fontSize: 10, background: 'var(--accent)', color: '#fff', padding: '2px 8px', borderRadius: 20, fontWeight: 700 }}>RECOMMENDED</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+                  {upiApps.map(app => (
+                    <div key={app.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '12px 8px', background: 'var(--surface2)', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)' }}>
+                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: app.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)' }}>{app.icon}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600 }}>{app.name}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="form-group" style={{ marginBottom: 16 }}>
+                  <label className="form-label">Your UPI ID</label>
+                  <input className="form-input" placeholder="yourname@upi" value={upiId} onChange={e => setUpiId(e.target.value)} style={{ fontSize: 15 }} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{ marginBottom: 20 }}>
+              <label className="form-label">Select Your Pass</label>
+              <select className="form-input" value={selectedPass} onChange={e => setSelectedPass(e.target.value)}>
+                {userPasses.map(p => (
+                  <option key={p.id} value={p.id}>{p.plan_name} ({p.credits_remaining} credits left)</option>
+                ))}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+                Each slot requires 1 credit. You are booking {count} slot(s).
+              </div>
+            </div>
+          )}
+            
+            <div style={{ background: 'var(--surface2)', padding: 16, borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 12 }}>
+                {!user ? 'Account Details (Auto-Register)' : 'Booking Details'}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Full Name</label>
+                <input className="form-input" placeholder="John Doe" value={guestName} onChange={e => setGuestName(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Phone Number</label>
+                <input className="form-input" placeholder="+91 9876543210" value={guestPhone} onChange={e => setGuestPhone(e.target.value)} />
+              </div>
+              {!user && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Email</label>
+                    <input className="form-input" type="email" placeholder="john@example.com" value={guestEmail} onChange={e => setGuestEmail(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Password</label>
+                    <input className="form-input" type="password" placeholder="Create a password" value={guestPassword} onChange={e => setGuestPassword(e.target.value)} />
+                  </div>
+                </>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                <label className="form-label" style={{ marginBottom: 0 }}>Find a Team? (Public Game)</label>
+                <input type="checkbox" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
+              </div>
+              {isPublic && (
+                <div className="form-group" style={{ marginTop: 12 }}>
+                  <label className="form-label">Max Players Needed</label>
+                  <input type="number" className="form-input" value={maxPlayers} onChange={e => setMaxPlayers(e.target.value)} />
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 20, background: 'var(--surface2)', padding: 16, borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+              <label className="form-label">Coupon Code</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input className="form-input" placeholder="Enter coupon..." value={couponCode} onChange={e => setCouponCode(e.target.value)} disabled={discount > 0} />
+                <button className="btn-outline btn-sm" onClick={applyCoupon} disabled={validatingCoupon || !couponCode.trim() || discount > 0}>
+                  {validatingCoupon ? '...' : discount > 0 ? 'Applied' : 'Apply'}
+                </button>
+              </div>
+              {discount > 0 && <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 6, fontWeight: 600 }}>Discount of ₹{discount} will be applied!</div>}
+            </div>
+
+          <button className="pay-btn" onClick={handlePay} disabled={loading || (method === 'upi' && !upiId.trim()) || (method === 'credits' && !selectedPass)}>
+            {loading ? 'Confirming Payment...' : method === 'credits' ? `Book using Credits (${count})` : `Pay ₹${finalPrice} via UPI`}
+          </button>
+        </div>
+      );
+    }
+
+
+    /* ============================
+       My Bookings
+    ============================ */
+    function MyBookingsPage({ setPage, showToast }) {
+      const [bookings, setBookings] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [reviewBooking, setReviewBooking] = useState(null);
+      const [chatBooking, setChatBooking] = useState(null);
+
+      const load = async () => {
+        setLoading(true);
+        try { const d = await api.get('/bookings/my', true); setBookings(d); }
+        catch (err) { showToast(err.message, 'error'); }
+        setLoading(false);
+      };
+
+      useEffect(() => { load(); }, []);
+
+      const cancelBooking = async (id) => {
+        if (!confirm('Are you sure you want to cancel this booking?')) return;
+        try {
+          await api.put(`/bookings/${id}/cancel`, {});
+          showToast('Booking cancelled', 'success');
+          load();
+        } catch (err) { showToast(err.message, 'error'); }
+      };
+
+      const handleReviewSubmit = async (arena_id, booking_id, rating, comment) => {
+        try {
+          await api.post('/reviews', { arena_id, booking_id, rating, comment });
+          showToast('Thank you for your review!', 'success');
+          setReviewBooking(null);
+          load();
+        } catch (err) { showToast(err.message, 'error'); }
+      };
+
+      return (
+        <div className="page-wrap section-pad anim-fadeIn">
+          <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 28, marginBottom: 32 }}>
+            <div className="filter-label" style={{ color: 'var(--accent)', marginBottom: 8 }}>History</div>
+            <div className="section-title">My <span>Bookings</span></div>
+            <div className="section-subtitle">Track your upcoming games and rate your past experiences</div>
+          </div>
+
+          {loading ? <SpinnerFull /> : bookings.length === 0 ? (
+            <EmptyState title="No Bookings Yet" desc="Head to Explore and book your first arena." action={
+              <button className="btn-primary" onClick={() => setPage('home')}>Explore Arenas</button>
+            } />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {bookings.map(b => (
+                <div key={b.id} className="booking-item anim-fadeUp">
+                  <div className="booking-item-info">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <div className="booking-item-name">{b.arena_name}</div>
+                        <div className="booking-item-meta">
+                          {new Date(b.slot_date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                        </div>
+                        <div className="booking-item-meta" style={{ marginTop: 4, color: 'var(--text)' }}>
+                          {b.start_time?.substring(0,5)} – {b.end_time?.substring(0,5)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div className="booking-item-amount">₹{b.amount}</div>
+                        {parseFloat(b.discount_amount) > 0 && (
+                          <div style={{ fontSize: 10, color: 'var(--green)', fontWeight: 700, marginBottom: 4 }}>
+                            SAVED ₹{b.discount_amount} ({b.applied_coupon})
+                          </div>
+                        )}
+                        <StatusBadge status={b.status} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                      {b.status === 'confirmed' && (
+                        <button className="action-btn danger" onClick={() => cancelBooking(b.id)}>Cancel Booking</button>
+                      )}
+                      {(b.status === 'checked-in' || b.status === 'confirmed') && (
+                        <button className="action-btn" onClick={() => setReviewBooking(b)}>Rate Experience</button>
+                      )}
+                      {b.status === 'confirmed' && (
+                        <button className="action-btn primary" onClick={() => setChatBooking(b)}>Coordinate Chat</button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {reviewBooking && (
+            <div className="modal-overlay" onClick={() => setReviewBooking(null)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <div className="modal-title">Rate {reviewBooking.arena_name}</div>
+                  <button className="modal-close" onClick={() => setReviewBooking(null)}>×</button>
+                </div>
+                <div className="modal-body">
+                   <ReviewForm 
+                     onSubmit={(rating, comment) => handleReviewSubmit(reviewBooking.arena_id, reviewBooking.id, rating, comment)} 
+                   />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {chatBooking && (
+            <div className="modal-overlay" onClick={() => setChatBooking(null)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()} style={{ height: '80vh', display: 'flex', flexDirection: 'column' }}>
+                <div className="modal-header">
+                  <div className="modal-title">Team Chat: {chatBooking.arena_name}</div>
+                  <button className="modal-close" onClick={() => setChatBooking(null)}>×</button>
+                </div>
+                <div className="modal-body" style={{ flex: 1, padding: 0, overflow: 'hidden' }}>
+                   <ChatRoom booking={chatBooking} />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ============================
+       Chat Room Component
+    ============================ */
+    function ChatRoom({ booking }) {
+      const { user, socket } = useAuth();
+      const [messages, setMessages] = useState([]);
+      const [input, setInput] = useState('');
+      const scrollRef = React.useRef();
+
+      useEffect(() => {
+        if (!booking || !api) return;
+        api.get(`/messages/${booking.id}`, true).then(setMessages).catch(e => console.error(e));
+        if (socket) {
+          socket.emit('join_chat', booking.id);
+          socket.on('receive_message', (msg) => {
+            setMessages(prev => [...prev, msg]);
+          });
+        }
+        return () => { if (socket) socket.off('receive_message'); };
+      }, [booking.id, socket]);
+
+      useEffect(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }, [messages]);
+
+      const send = (e) => {
+        e.preventDefault();
+        if (!input.trim() || !socket) return;
+        socket.emit('send_message', {
+          booking_id: booking.id,
+          sender_id: user.id,
+          sender_name: user.name,
+          message: input
+        });
+        setInput('');
+      };
+
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 20, background: 'var(--surface2)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {messages.map((m, i) => {
+              const isMe = m.sender_id === user?.id;
+              return (
+                <div key={i} style={{ 
+                  alignSelf: isMe ? 'flex-end' : 'flex-start',
+                  maxWidth: '70%',
+                  padding: '10px 14px',
+                  borderRadius: isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  background: isMe ? 'var(--accent)' : 'var(--surface)',
+                  color: isMe ? 'white' : 'var(--text)',
+                  fontSize: 13,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                }}>
+                  {!isMe && <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 4, color: 'var(--accent)' }}>{m.sender_name}</div>}
+                  <div>{m.message}</div>
+                  <div style={{ fontSize: 9, opacity: 0.6, marginTop: 4, textAlign: 'right' }}>
+                    {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <form onSubmit={send} style={{ padding: 16, background: 'var(--surface)', borderTop: '1px solid var(--border)', display: 'flex', gap: 10 }}>
+            <input className="form-input" style={{ borderRadius: 24, padding: '10px 20px' }} placeholder="Type a message..." value={input} onChange={e => setInput(e.target.value)} />
+            <button className="btn-primary" type="submit" style={{ width: 44, height: 44, borderRadius: '50%', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </form>
+        </div>
+      );
+    }
+
+    function ReviewForm({ onSubmit }) {
+      const [rating, setRating] = useState(5);
+      const [comment, setComment] = useState('');
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <label className="form-label">Rating</label>
+            <div style={{ display: 'flex', gap: 8, fontSize: 24, color: 'var(--gold)' }}>
+              {[1,2,3,4,5].map(i => (
+                <span key={i} style={{ cursor: 'pointer' }} onClick={() => setRating(i)}>
+                  {i <= rating ? '★' : '☆'}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="form-label">Your Comment</label>
+            <textarea className="form-input" rows="4" value={comment} onChange={e => setComment(e.target.value)} placeholder="How was the court quality and lighting?"></textarea>
+          </div>
+          <button className="btn-primary" onClick={() => onSubmit(rating, comment)}>Submit Review</button>
+        </div>
+      );
+    }
+
+    /* ============================
+       Dashboard
+    ============================ */
+    function DashboardPage({ setPage, showToast }) {
+      const { user } = useAuth();
+      const [stats, setStats] = useState(null);
+      const [analytics, setAnalytics] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        Promise.all([
+          api.get('/dashboard/stats', true),
+          api.get('/dashboard/analytics', true)
+        ]).then(([statsData, analyticsData]) => {
+          setStats(statsData);
+          setAnalytics(analyticsData);
+        }).catch(err => showToast(err.message, 'error')).finally(() => setLoading(false));
+      }, []);
+
+      if (loading) return <SpinnerFull />;
+
+      return (
+        <div className="page-wrap section-pad anim-fadeIn">
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 28, marginBottom: 32, gap: 16, flexWrap: 'wrap' }}>
+            <div>
+              <div className="filter-label" style={{ color: 'var(--accent)', marginBottom: 8 }}>Welcome, {user?.name}</div>
+              <div className="section-title">Business <span>Dashboard</span></div>
+              <div className="section-subtitle">Your arena performance and analytics</div>
+            </div>
+            <button className="btn-primary" onClick={() => setPage('my-arenas')}>Manage Arenas</button>
+          </div>
+
+          <div className="stats-grid">
+            {[
+              { label: 'Total Arenas', val: stats?.totalArenas || 0, color: 'var(--accent)' },
+              { label: 'Total Bookings', val: stats?.totalBookings || 0, color: 'var(--green)' },
+              { label: 'Revenue (Rs.)', val: (stats?.totalRevenue || 0).toLocaleString(), color: 'var(--gold)' },
+            ].map(s => (
+              <div key={s.label} className="stat-card">
+                <div className="stat-card-accent-line" style={{ background: s.color }}></div>
+                <div className="stat-card-label">{s.label}</div>
+                <div className="stat-card-val" style={{ color: s.color }}>{s.val}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 32 }}>
+            {/* Revenue by Sport Analytics */}
+            <div className="detail-section">
+              <div className="detail-section-header">
+                <div className="detail-section-title">Revenue by Sport</div>
+              </div>
+              <div className="detail-section-body">
+                {!analytics?.bySport || analytics.bySport.length === 0 ? (
+                  <div style={{ color: 'var(--text3)', fontSize: 13 }}>No data yet</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {analytics.bySport.map(s => (
+                      <div key={s.sport_type}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 12 }}>
+                          <span>{s.sport_type?.toUpperCase()}</span>
+                          <span style={{ fontWeight: 700 }}>₹{s.revenue} ({s.bookings} bookings)</span>
+                        </div>
+                        <div style={{ height: 8, background: 'var(--surface2)', borderRadius: 4 }}>
+                          <div style={{ 
+                            height: '100%', 
+                            width: `${stats?.totalRevenue > 0 ? Math.min(100, (s.revenue / stats.totalRevenue) * 100) : 0}%`, 
+                            background: 'var(--accent)', 
+                            borderRadius: 4 
+                          }}></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Retention Analytics */}
+            <div className="detail-section">
+              <div className="detail-section-header">
+                <div className="detail-section-title">Customer Retention</div>
+              </div>
+              <div className="detail-section-body" style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+                <div style={{ flex: 1 }}>
+                   <div style={{ marginBottom: 12 }}>
+                     <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>RETURNING CUSTOMERS</div>
+                     <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--green)' }}>{analytics?.retention?.returning_customers || 0}</div>
+                   </div>
+                   <div>
+                     <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>NEW CUSTOMERS</div>
+                     <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--gold)' }}>{analytics?.retention?.new_customers || 0}</div>
+                   </div>
+                </div>
+                <div style={{ width: 120, height: 120, borderRadius: '50%', border: '12px solid var(--surface2)', borderTopColor: 'var(--green)', transform: 'rotate(45deg)' }}></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="detail-section">
+            <div className="detail-section-header">
+              <div className="detail-section-title">Recent Bookings</div>
+            </div>
+            {!stats?.recentBookings?.length ? (
+              <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>No bookings yet.</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Customer</th><th>Arena</th><th>Date & Time</th><th>Status</th><th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.recentBookings.map(b => (
+                      <tr key={b.id}>
+                        <td style={{ color: 'var(--text)', fontWeight: 500 }}>{b.customer_name}</td>
+                        <td>{b.arena_name}</td>
+                        <td>{new Date(b.slot_date).toLocaleDateString()} &middot; {b.start_time?.substring(0,5)} – {b.end_time?.substring(0,5)}</td>
+                        <td><StatusBadge status={b.status} /></td>
+                        <td>
+                          <select className="filter-input btn-sm" value={b.status} onChange={async (e) => {
+                            try {
+                              await api.put(`/bookings/${b.id}/status`, { status: e.target.value });
+                              showToast('Status updated', 'success');
+                              window.location.reload();
+                            } catch (err) { showToast(err.message, 'error'); }
+                          }}>
+                            <option value="confirmed">Confirmed</option>
+                            <option value="checked-in">Checked In</option>
+                            <option value="no-show">No Show</option>
+                            <option value="cancelled">Cancelled</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================
+       My Arenas (Business)
+    ============================ */
+    function MyArenasPage({ setPage, showToast }) {
+      const [arenas, setArenas] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [showCreate, setShowCreate] = useState(false);
+      const [showSlots, setShowSlots] = useState(false);
+      const [showBookings, setShowBookings] = useState(false);
+      const [selected, setSelected] = useState(null);
+      const [arenaBookings, setArenaBookings] = useState([]);
+
+      const load = async () => {
+        try { const d = await api.get('/arenas/my/list', true); setArenas(d); }
+        catch (err) { showToast(err.message, 'error'); }
+        setLoading(false);
+      };
+      useEffect(() => { load(); }, []);
+
+      const deleteArena = async (id) => {
+        if (!confirm('Delete this arena?')) return;
+        try { await api.delete(`/arenas/${id}`); showToast('Arena deleted', 'success'); load(); }
+        catch (err) { showToast(err.message, 'error'); }
+      };
+
+      const viewBookings = async (arena) => {
+        setSelected(arena);
+        try { const d = await api.get(`/bookings/arena/${arena.id}`, true); setArenaBookings(d); }
+        catch (err) { showToast(err.message, 'error'); setArenaBookings([]); }
+        setShowBookings(true);
+      };
+
+      return (
+        <div className="page-wrap section-pad anim-fadeIn">
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 28, marginBottom: 32, gap: 16, flexWrap: 'wrap' }}>
+            <div>
+              <div className="filter-label" style={{ color: 'var(--accent)', marginBottom: 8 }}>Management</div>
+              <div className="section-title">My <span>Arenas</span></div>
+              <div className="section-subtitle">Create and manage your sports venues</div>
+            </div>
+            <button className="btn-primary" onClick={() => setShowCreate(true)}>+ Add Arena</button>
+          </div>
+
+          {loading ? <SpinnerFull /> : arenas.length === 0 ? (
+            <EmptyState title="No Arenas Yet" desc="Create your first arena and start accepting bookings from players." action={
+              <button className="btn-primary" onClick={() => setShowCreate(true)}>Create Arena</button>
+            } />
+          ) : (
+            <div className="arena-manage-grid">
+              {arenas.map(arena => {
+                const imgUrl = arena.image_url || SPORT_IMAGES[arena.sport_type?.toLowerCase()] || SPORT_IMAGES.football;
+                return (
+                  <div key={arena.id} className="arena-manage-card">
+                    <div className="arena-manage-img">
+                      <img src={imgUrl} alt={arena.name} onError={e => { e.target.src = SPORT_IMAGES.football; }} />
+                      <div style={{ position: 'absolute', top: 12, left: 12 }}>
+                        <span className="badge badge-gray">{arena.sport_type?.toUpperCase()}</span>
+                      </div>
+                    </div>
+                    <div className="arena-manage-body">
+                      <div className="arena-manage-name">{arena.name}</div>
+                      <div className="arena-manage-meta">{arena.location} &middot; ₹{arena.price_day}/hr (Day) / ₹{arena.price_night}/hr (Night)</div>
+                      {arena.coupon_code && (
+                        <div style={{ fontSize: 11, background: 'rgba(29, 185, 84, 0.1)', color: 'var(--green)', padding: '4px 8px', borderRadius: 4, display: 'inline-block', marginBottom: 12, border: '1px solid rgba(29, 185, 84, 0.2)' }}>
+                          COUPON: <strong>{arena.coupon_code}</strong> (₹{arena.discount_value} off)
+                        </div>
+                      )}
+                      <div className="arena-manage-actions">
+                        <button className="action-btn" onClick={() => { setSelected(arena); setShowSlots(true); }}>Slots</button>
+                        <button className="action-btn" onClick={() => viewBookings(arena)}>Bookings</button>
+                        <button className="action-btn danger" onClick={() => deleteArena(arena.id)}>Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Create Modal */}
+          {showCreate && (
+            <div className="modal-overlay" onClick={() => setShowCreate(false)}>
+              <div className="modal-box lg" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <div className="modal-title">Create Arena</div>
+                  <button className="modal-close" onClick={() => setShowCreate(false)}>×</button>
+                </div>
+                <div className="modal-body">
+                  <CreateArenaForm onCreated={() => { setShowCreate(false); load(); showToast('Arena created!', 'success'); }} showToast={showToast} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Slots Modal */}
+          {showSlots && selected && (
+            <div className="modal-overlay" onClick={() => setShowSlots(false)}>
+              <div className="modal-box lg" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <div className="modal-title">Manage Slots</div>
+                  <button className="modal-close" onClick={() => setShowSlots(false)}>×</button>
+                </div>
+                <div className="modal-body">
+                  <ManageSlotsForm arena={selected} showToast={showToast} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bookings Modal */}
+          {showBookings && (
+            <div className="modal-overlay" onClick={() => setShowBookings(false)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <div className="modal-title">{selected?.name} — Bookings</div>
+                  <button className="modal-close" onClick={() => setShowBookings(false)}>×</button>
+                </div>
+                <div className="modal-body">
+                  {arenaBookings.length === 0 ? (
+                    <EmptyState title="No Bookings" desc="No customers have booked this arena yet." />
+                  ) : (
+                    <div className="slot-scroll">
+                      {arenaBookings.map(b => (
+                        <div key={b.id} className="slot-manage-item">
+                          <div>
+                            <div className="slot-manage-date">{b.customer_name}</div>
+                            <div className="slot-manage-time">{b.customer_email}</div>
+                            <div className="slot-manage-time" style={{ marginTop: 4 }}>{new Date(b.slot_date).toLocaleDateString()} &middot; {b.start_time?.substring(0,5)} – {b.end_time?.substring(0,5)}</div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+                            <StatusBadge status={b.status} />
+                            <PayBadge status={b.payment_status} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ============================
+       Create Arena Form
+    ============================ */
+    /* ============================
+       Create Arena Form — Tiered Pricing & Hours
+    ============================ */
+    function CreateArenaForm({ onCreated, showToast }) {
+      const [form, setForm] = useState({ 
+        name: '', location: '', address: '', map_url: '', sport_type: ['football'], 
+        price_day: '500', price_night: '800', 
+        price_weekend_day: '600', price_weekend_night: '900',
+        open_hour: '6', peak_start_hour: '17', close_hour: '23',
+        image_url: '', description: '', contact: '',
+        coupon_code: '', discount_value: '0'
+      });
+      const [loading, setLoading] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault(); setLoading(true);
+        try {
+          if (!form.sport_type || form.sport_type.length === 0) throw new Error('Please select at least one sport.');
+          await api.post('/arenas', { ...form, sport_type: form.sport_type.join(',') });
+          onCreated();
+        } catch (err) { showToast(err.message, 'error'); }
+        setLoading(false);
+      };
+
+      const hours = Array.from({ length: 24 }, (_, i) => ({
+        val: i,
+        label: i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i-12} PM`
+      }));
+
+      // For closing hours past midnight
+      const closeHours = [
+        ...hours,
+        { val: 24, label: '12 AM (Next Day)' },
+        { val: 25, label: '1 AM (Next Day)' },
+        { val: 26, label: '2 AM (Next Day)' },
+        { val: 27, label: '3 AM (Next Day)' },
+        { val: 28, label: '4 AM (Next Day)' }
+      ];
+
+      return (
+        <form onSubmit={handleSubmit}>
+          <div className="create-grid">
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <label className="form-label">Arena Name</label>
+              <input className="form-input" required placeholder="Thunder Arena" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+            </div>
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <label className="form-label">Sport Types</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {SPORTS.map(s => {
+                  const active = form.sport_type.includes(s.value);
+                  return (
+                    <button type="button" key={s.value} onClick={() => {
+                      setForm(f => ({
+                        ...f, 
+                        sport_type: active 
+                          ? f.sport_type.filter(x => x !== s.value) 
+                          : [...f.sport_type, s.value]
+                      }));
+                    }} style={{
+                      padding: '8px 16px', borderRadius: 'var(--r-sm)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                      border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                      background: active ? 'rgba(232,55,26,0.1)' : 'var(--surface2)',
+                      color: active ? 'white' : 'var(--text2)', transition: 'all 0.2s'
+                    }}>
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16, background: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Day Price (₹/hr)</label>
+              <input className="form-input" type="number" required value={form.price_day} onChange={e => setForm({...form, price_day: e.target.value})} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Night/Peak Price (₹/hr)</label>
+              <input className="form-input" type="number" required value={form.price_night} onChange={e => setForm({...form, price_night: e.target.value})} />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16, background: 'rgba(232, 55, 26, 0.03)', padding: 16, borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Weekend Day Price (₹/hr)</label>
+              <input className="form-input" type="number" required value={form.price_weekend_day} onChange={e => setForm({...form, price_weekend_day: e.target.value})} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Weekend Peak Price (₹/hr)</label>
+              <input className="form-input" type="number" required value={form.price_weekend_night} onChange={e => setForm({...form, price_weekend_night: e.target.value})} />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <div className="form-group">
+              <label className="form-label">Opens At</label>
+              <select className="form-input form-select" value={form.open_hour} onChange={e => setForm({...form, open_hour: e.target.value})}>
+                {hours.map(h => <option key={h.val} value={h.val}>{h.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Peak Price Starts</label>
+              <select className="form-input form-select" value={form.peak_start_hour} onChange={e => setForm({...form, peak_start_hour: e.target.value})}>
+                {hours.map(h => <option key={h.val} value={h.val}>{h.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Closes At</label>
+              <select className="form-input form-select" value={form.close_hour} onChange={e => setForm({...form, close_hour: e.target.value})}>
+                {closeHours.slice(form.open_hour).map(h => <option key={h.val} value={h.val}>{h.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">City / Area</label>
+            <input className="form-input" required placeholder="Mumbai, Andheri" value={form.location} onChange={e => setForm({...form, location: e.target.value})} />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Full Address</label>
+            <textarea className="form-input" rows="1" placeholder="Plot No. 45, Sector 12, Andheri West..." value={form.address} onChange={e => setForm({...form, address: e.target.value})}></textarea>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Google Maps Link</label>
+            <input className="form-input" placeholder="https://maps.google.com/..." value={form.map_url} onChange={e => setForm({...form, map_url: e.target.value})} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+             <div className="form-group">
+              <label className="form-label">Contact Number</label>
+              <input className="form-input" placeholder="+91 9876543210" value={form.contact} onChange={e => setForm({...form, contact: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Image URL</label>
+              <input className="form-input" placeholder="https://..." value={form.image_url} onChange={e => setForm({...form, image_url: e.target.value})} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Description</label>
+            <textarea className="form-input" rows="2" placeholder="Brief info about facilities..." value={form.description} onChange={e => setForm({...form, description: e.target.value})}></textarea>
+          </div>
+
+          <div style={{ background: 'rgba(232, 55, 26, 0.03)', padding: 16, borderRadius: 'var(--r-md)', border: '1px solid var(--border)', marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: 12 }}>Coupon Settings</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Coupon Code (Optional)</label>
+                <input className="form-input" placeholder="e.g. SAVE100" value={form.coupon_code} onChange={e => setForm({...form, coupon_code: e.target.value})} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Discount Value (₹)</label>
+                <input className="form-input" type="number" value={form.discount_value} onChange={e => setForm({...form, discount_value: e.target.value})} />
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" disabled={loading} className="submit-btn">
+            {loading ? <><Spin /> Creating Arena...</> : 'Create Arena'}
+          </button>
+        </form>
+      );
+    }
+    /* ============================
+       Manage Slots Form — Simplified (Automatic)
+    ============================ */
+    function ManageSlotsForm({ arena, showToast }) {
+      const [slots, setSlots] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      const loadSlots = async () => {
+        try { const d = await api.get(`/slots/${arena.id}`); setSlots(d); }
+        catch (err) { showToast(err.message, 'error'); }
+        setLoading(false);
+      };
+      useEffect(() => { loadSlots(); }, []);
+
+      const setStatus = async (slotId, status) => {
+        try { 
+          await api.post(`/slots/block`, { slot_id: slotId, status }); 
+          showToast(`Slot status updated to ${status}`, 'success'); 
+          loadSlots(); 
+        } catch (err) { showToast(err.message, 'error'); }
+      };
+
+      const grouped = {};
+      slots.forEach(s => {
+        const d = new Date(s.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        if (!grouped[d]) grouped[d] = [];
+        grouped[d].push(s);
+      });
+
+      return (
+        <div>
+          <div style={{ background: 'rgba(232, 55, 26, 0.05)', border: '1px solid rgba(232, 55, 26, 0.15)', borderRadius: 'var(--r-md)', padding: 14, marginBottom: 20, fontSize: 13, color: 'var(--text2)' }}>
+            <strong>Manual Override:</strong> Use "Block" for maintenance or private events. "Available" makes it open for booking.
+          </div>
+
+          <div style={{ maxHeight: 600, overflowY: 'auto', paddingRight: 8 }}>
+            {loading ? <SpinnerFull /> : Object.keys(grouped).length === 0 ? (
+              <EmptyState title="No Slots Available" desc="Try checking your operating hours." />
+            ) : Object.keys(grouped).map(date => (
+              <div key={date} style={{ marginBottom: 24 }}>
+                <div className="filter-label" style={{ marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>{date}</div>
+                <div className="slots-grid">
+                  {grouped[date].map(slot => (
+                    <div key={slot.id} className={`slot-btn-manage ${slot.status}`} style={{ display: 'flex', flexDirection: 'column', padding: 10, border: '1px solid var(--border)', borderRadius: 8, gap: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{slot.start_time?.substring(0,5)}</span>
+                        <StatusBadge status={slot.status} />
+                      </div>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button className="btn-sm" style={{ flex: 1, fontSize: 10, padding: '4px' }} onClick={() => setStatus(slot.id, 'available')}>Available</button>
+                        <button className="btn-sm danger" style={{ flex: 1, fontSize: 10, padding: '4px' }} onClick={() => setStatus(slot.id, 'blocked')}>Block</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function CommunityGames({ showToast }) {
+      const [games, setGames] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        api.get('/bookings/public').then(setGames).catch(err => showToast(err.message, 'error')).finally(() => setLoading(false));
+      }, []);
+
+      if (loading) return <SpinnerFull />;
+      if (games.length === 0) return <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: '30px', background: 'var(--surface2)', borderRadius: 12, border: '1px dashed var(--border)' }}>No public games currently looking for players. Check back later!</div>;
+
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+          {games.map(game => (
+            <div key={game.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="badge badge-green" style={{ textTransform: 'uppercase' }}>{game.sport_type}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text3)' }}>{game.max_players} Slots</span>
+               </div>
+               <div>
+                  <div style={{ fontWeight: 800, fontSize: 16 }}>{game.arena_name}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>
+                    {new Date(game.slot_date).toLocaleDateString()} &middot; {game.start_time?.substring(0,5)}
+                  </div>
+               </div>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>By {game.customer_name}</div>
+                  <button className="btn-primary btn-sm" onClick={() => showToast('Request sent to join game!', 'success')}>Join Game</button>
+               </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function Spin() {
+      return <div style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.7s linear infinite', flexShrink: 0 }}></div>;
+    }
+
+    function SpinnerFull() {
+      return <div className="spinner-wrap"><div className="spinner"></div></div>;
+    }
+
+    function EmptyState({ title, desc, action }) {
+      return (
+        <div className="empty-state anim-fadeIn">
+          <div className="empty-icon">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <div className="empty-title">{title}</div>
+          <div className="empty-desc">{desc}</div>
+          {action}
+        </div>
+      );
+    }
+
+    function StatusBadge({ status }) {
+      const map = {
+        confirmed: 'badge-green',
+        pending: 'badge-amber',
+        cancelled: 'badge-red',
+        payment_failed: 'badge-red',
+      };
+      return <span className={`badge ${map[status] || 'badge-gray'}`}>{status?.replace('_', ' ') || 'Unknown'}</span>;
+    }
+
+    function PayBadge({ status }) {
+      const map = { paid: 'badge-green', unpaid: 'badge-gray', failed: 'badge-red' };
+      return <span className={`badge ${map[status] || 'badge-gray'}`}>{status || 'Unpaid'}</span>;
+    }
+
+    function Footer() {
+      return (
+        <footer className="footer">
+          <div className="footer-inner">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className="logo-mark" style={{ width: 28, height: 28 }}>
+                <svg viewBox="0 0 24 24" style={{ width: 14, height: 14 }} fill="white"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+              </div>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: 'var(--text)', textTransform: 'uppercase' }}>SportArena</span>
+            </div>
+            <div className="footer-copy">© 2025 SportArena. All rights reserved.</div>
+            <div className="footer-right">
+              <span className="footer-link">Privacy</span>
+              <span className="footer-link">Terms</span>
+              <span className="footer-link">Support</span>
+            </div>
+          </div>
+        </footer>
+      );
+    }
+
+    /* ============================
+       App Root
+    ============================ */
+    function App() {
+      const [page, setPage] = useState('home');
+      const [selectedArena, setSelectedArena] = useState(null);
+      const [toast, setToast] = useState(null);
+      const showToast = (message, type = 'info') => setToast({ message, type });
+
+      return (
+        <AuthProvider>
+          <AppContent
+            page={page} setPage={setPage}
+            selectedArena={selectedArena} setSelectedArena={setSelectedArena}
+            toast={toast} setToast={setToast} showToast={showToast}
+          />
+        </AuthProvider>
+      );
+    }
+
+    function AppContent({ page, setPage, selectedArena, setSelectedArena, toast, setToast, showToast }) {
+      const { user, loading, socket } = useAuth();
+
+      useEffect(() => {
+        if (socket) {
+          socket.on('notification', (data) => {
+            showToast(data.message, data.type === 'booking_confirmed' ? 'success' : 'info');
+          });
+          return () => socket.off('notification');
+        }
+      }, [socket]);
+
+      useEffect(() => {
+        if (loading) return;
+        const authPages = ['login', 'register', 'home', 'arena-detail'];
+        if (!user && !authPages.includes(page)) setPage('home');
+      }, [user, loading, page]);
+
+      if (loading) return <SpinnerFull />;
+
+      const renderPage = () => {
+        switch (page) {
+          case 'login':        return <LoginPage setPage={setPage} showToast={showToast} />;
+          case 'register':     return <RegisterPage setPage={setPage} showToast={showToast} />;
+          case 'home':         return <HomePage setPage={setPage} setSelectedArena={setSelectedArena} showToast={showToast} />;
+          case 'arena-detail': return <ArenaDetailPage arena={selectedArena} setPage={setPage} showToast={showToast} />;
+          case 'my-bookings':  return <MyBookingsPage setPage={setPage} showToast={showToast} />;
+          case 'dashboard':    return user?.role === 'business' ? <DashboardPage setPage={setPage} showToast={showToast} /> : <HomePage setPage={setPage} setSelectedArena={setSelectedArena} showToast={showToast} />;
+          case 'my-arenas':    return user?.role === 'business' ? <MyArenasPage setPage={setPage} showToast={showToast} /> : <HomePage setPage={setPage} setSelectedArena={setSelectedArena} showToast={showToast} />;
+          default:             return <HomePage setPage={setPage} setSelectedArena={setSelectedArena} showToast={showToast} />;
+        }
+      };
+
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+          <Navbar currentPage={page} setPage={setPage} />
+          <main style={{ flex: 1 }}>{renderPage()}</main>
+          <Footer />
+          {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        </div>
+      );
+    }
+
+    class ErrorBoundary extends React.Component {
+      constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+      static getDerivedStateFromError(error) { return { hasError: true, error }; }
+      componentDidCatch(error, errorInfo) { console.error("React Error:", error, errorInfo); }
+      render() {
+        if (this.state.hasError) {
+          return <div style={{padding: '40px', color: 'red', background: '#111'}}><h1>React Crashed</h1><pre>{this.state.error.toString()}</pre></div>;
+        }
+        return this.props.children;
+      }
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<ErrorBoundary><App /></ErrorBoundary>);
+  
